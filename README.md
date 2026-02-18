@@ -2,22 +2,88 @@
   <img src="./.github/assets/livekit-mark.png" alt="LiveKit logo" width="100" height="100">
 </a>
 
-# LiveKit Agents Starter - Python
+# Insurance Verification Voice Agent
 
-A complete starter project for building voice AI apps with [LiveKit Agents for Python](https://github.com/livekit/agents) and [LiveKit Cloud](https://cloud.livekit.io/).
+A voice AI agent built with [LiveKit Agents for Python](https://github.com/livekit/agents) and [LiveKit Cloud](https://cloud.livekit.io/) that assists clinic front-desk staff with insurance verification.
 
-The starter project includes:
+## How it works
 
-- A simple voice AI assistant, ready for extension and customization
+Clinic staff use a frontend UI to enter patient information and initiate an insurance verification call. The voice agent handles the verification process and publishes results back to the frontend in real time via LiveKit participant attributes.
+
+### User workflow
+
+1. **Enter patient info** — The staff member enters patient details (name, DOB, insurance provider, member ID, group number) in the frontend form.
+2. **Start verification** — The frontend creates a LiveKit room and joins with the patient data set as participant attributes.
+3. **Agent verifies** — The voice agent reads the patient info, confirms it with the user, and calls the `verify_insurance` tool to check coverage.
+4. **Results appear** — Verification results (eligibility, copay, deductible, coinsurance, etc.) are published as participant attributes. The frontend listens for attribute changes and updates the UI in real time.
+5. **Multiple agents** — Each verification runs in its own LiveKit room, so staff can initiate multiple concurrent verifications.
+
+### Frontend integration
+
+The frontend communicates with the agent using **participant attributes**:
+
+**Sending patient data to the agent** — set attributes before connecting:
+
+```javascript
+// When connecting to the room, pass patient info as participant attributes
+const room = new Room();
+await room.connect(url, token, {
+  participantAttributes: {
+    "patient.name": "Jane Smith",
+    "patient.date_of_birth": "03/15/1985",
+    "patient.insurance_provider": "Blue Cross Blue Shield",
+    "patient.member_id": "BCB123456",
+    "patient.group_number": "GRP7890",
+  },
+});
+```
+
+**Receiving verification results** — listen for attribute changes:
+
+```javascript
+room.on(RoomEvent.ParticipantAttributesChanged, (changed, participant) => {
+  if (participant.isAgent) {
+    // Read verification results from the agent's attributes
+    const status = participant.attributes["verification.status"];
+    const eligible = participant.attributes["verification.eligible"];
+    const copay = participant.attributes["verification.copay"];
+    const deductible = participant.attributes["verification.deductible"];
+    // ... update your UI
+  }
+});
+```
+
+**Agent attribute keys** published by the agent:
+
+| Key | Description |
+|-----|-------------|
+| `verification.status` | `pending`, `in_progress`, `verified`, `denied`, or `error` |
+| `verification.patient_name` | Confirmed patient name |
+| `verification.eligible` | `true` or `false` |
+| `verification.copay` | Copay amount |
+| `verification.deductible` | Deductible amount |
+| `verification.deductible_met` | Deductible amount met so far |
+| `verification.coinsurance` | Coinsurance split |
+| `verification.out_of_pocket_max` | Out-of-pocket maximum |
+| `verification.coverage_details` | Coverage summary |
+| `verification.effective_date` | Coverage start date |
+| `verification.termination_date` | Coverage end date |
+| `verification.notes` | Additional notes |
+
+### Features
+
+- Insurance verification voice agent with guided patient data collection
+- `verify_insurance` function tool for LLM-driven verification flow
+- Real-time result publishing via participant attributes
+- Automatic patient data ingestion from frontend attributes
 - A voice AI pipeline with [models](https://docs.livekit.io/agents/models) from OpenAI, Cartesia, and AssemblyAI served through LiveKit Cloud
-  - Easily integrate your preferred [LLM](https://docs.livekit.io/agents/models/llm/), [STT](https://docs.livekit.io/agents/models/stt/), and [TTS](https://docs.livekit.io/agents/models/tts/) instead, or swap to a realtime model like the [OpenAI Realtime API](https://docs.livekit.io/agents/models/realtime/openai)
 - Eval suite based on the LiveKit Agents [testing & evaluation framework](https://docs.livekit.io/agents/build/testing/)
 - [LiveKit Turn Detector](https://docs.livekit.io/agents/build/turns/turn-detector/) for contextually-aware speaker detection, with multilingual support
 - [Background voice cancellation](https://docs.livekit.io/home/cloud/noise-cancellation/)
 - Integrated [metrics and logging](https://docs.livekit.io/agents/build/metrics/)
 - A Dockerfile ready for [production deployment](https://docs.livekit.io/agents/ops/deployment/)
 
-This starter app is compatible with any [custom web/mobile frontend](https://docs.livekit.io/agents/start/frontend/) or [SIP-based telephony](https://docs.livekit.io/agents/start/telephony/).
+This agent is compatible with any [custom web/mobile frontend](https://docs.livekit.io/agents/start/frontend/) or [SIP-based telephony](https://docs.livekit.io/agents/start/telephony/).
 
 ## Coding agents and MCP
 

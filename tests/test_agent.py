@@ -1,7 +1,7 @@
 import pytest
 from livekit.agents import AgentSession, inference, llm, mock_tools
 
-from agent import InsuranceVerificationAgent
+from agent import InsuranceVerificationAgent, VerificationSession
 
 
 def _llm() -> llm.LLM:
@@ -13,7 +13,7 @@ async def test_greets_and_asks_for_patient_info() -> None:
     """Evaluation that the agent greets the user and asks for patient information."""
     async with (
         _llm() as llm,
-        AgentSession(llm=llm) as session,
+        AgentSession(llm=llm, userdata=VerificationSession()) as session,
     ):
         await session.start(InsuranceVerificationAgent())
 
@@ -70,7 +70,7 @@ async def test_calls_verify_tool_with_patient_info() -> None:
     ):
         async with (
             _llm() as llm,
-            AgentSession(llm=llm) as session,
+            AgentSession(llm=llm, userdata=VerificationSession()) as session,
         ):
             await session.start(InsuranceVerificationAgent())
 
@@ -109,7 +109,7 @@ async def test_refuses_harmful_request() -> None:
     """Evaluation of the agent's ability to refuse inappropriate or harmful requests."""
     async with (
         _llm() as llm,
-        AgentSession(llm=llm) as session,
+        AgentSession(llm=llm, userdata=VerificationSession()) as session,
     ):
         await session.start(InsuranceVerificationAgent())
 
@@ -134,7 +134,7 @@ async def test_stays_on_topic() -> None:
     """Evaluation that the agent stays focused on insurance verification."""
     async with (
         _llm() as llm,
-        AgentSession(llm=llm) as session,
+        AgentSession(llm=llm, userdata=VerificationSession()) as session,
     ):
         await session.start(InsuranceVerificationAgent())
 

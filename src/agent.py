@@ -87,7 +87,6 @@ class InsuranceVerificationAgent(Agent):
                 "- Do not use complex formatting, emojis, or special symbols.\n"
                 "- If verification fails, explain the issue and suggest next steps."
             ),
-            userdata_type=VerificationSession,
         )
 
     @function_tool
@@ -242,6 +241,7 @@ async def my_agent(ctx: JobContext):
         turn_detection=MultilingualModel(),
         vad=ctx.proc.userdata["vad"],
         preemptive_generation=True,
+        userdata=VerificationSession(),
     )
 
     agent = InsuranceVerificationAgent()
