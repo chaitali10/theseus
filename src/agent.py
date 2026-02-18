@@ -1,4 +1,6 @@
 import logging
+from dataclasses import dataclass, field
+from enum import Enum
 
 from dotenv import load_dotenv
 from livekit import rtc
@@ -8,7 +10,9 @@ from livekit.agents import (
     AgentSession,
     JobContext,
     JobProcess,
+    RunContext,
     cli,
+    function_tool,
     inference,
     room_io,
 )
@@ -20,31 +24,197 @@ logger = logging.getLogger("agent")
 load_dotenv(".env.local")
 
 
-class Assistant(Agent):
+class VerificationStatus(str, Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    VERIFIED = "verified"
+    DENIED = "denied"
+    ERROR = "error"
+
+
+@dataclass
+class PatientInfo:
+    patient_name: str = ""
+    date_of_birth: str = ""
+    member_id: str = ""
+    insurance_provider: str = ""
+    group_number: str = ""
+    plan_type: str = ""
+
+
+@dataclass
+class VerificationResult:
+    status: VerificationStatus = VerificationStatus.PENDING
+    eligible: bool = False
+    copay: str = ""
+    deductible: str = ""
+    deductible_met: str = ""
+    coinsurance: str = ""
+    out_of_pocket_max: str = ""
+    coverage_details: str = ""
+    effective_date: str = ""
+    termination_date: str = ""
+    notes: str = ""
+
+
+@dataclass
+class VerificationSession:
+    patient: PatientInfo = field(default_factory=PatientInfo)
+    result: VerificationResult = field(default_factory=VerificationResult)
+
+
+class InsuranceVerificationAgent(Agent):
     def __init__(self) -> None:
         super().__init__(
-            instructions="""You are a helpful voice AI assistant. The user is interacting with you via voice, even if you perceive the conversation as text.
-            You eagerly assist users with their questions by providing information from your extensive knowledge.
-            Your responses are concise, to the point, and without any complex formatting or punctuation including emojis, asterisks, or other symbols.
-            You are curious, friendly, and have a sense of humor.""",
+            instructions=(
+                "You are a voice AI agent that assists clinic front-desk staff "
+                "with insurance verification. The user is interacting with you via "
+                "voice, even if you perceive the conversation as text.\n\n"
+                "Your workflow:\n"
+                "1. Greet the user and ask for the patient information needed for "
+                "insurance verification: patient name, date of birth, insurance "
+                "provider, member ID, and group number.\n"
+                "2. Once you have the required patient details, use the "
+                "verify_insurance tool to check the patient's insurance coverage.\n"
+                "3. After verification completes, clearly communicate the results "
+                "to the user including eligibility status, copay, deductible, and "
+                "coverage details.\n\n"
+                "Important guidelines:\n"
+                "- Confirm each piece of information before proceeding.\n"
+                "- If the user has already provided patient info (via the system), "
+                "acknowledge it and proceed with verification.\n"
+                "- Be concise, professional, and clear in your responses.\n"
+                "- Do not use complex formatting, emojis, or special symbols.\n"
+                "- If verification fails, explain the issue and suggest next steps."
+            ),
+            userdata_type=VerificationSession,
         )
 
-    # To add tools, use the @function_tool decorator.
-    # Here's an example that adds a simple weather tool.
-    # You also have to add `from livekit.agents import function_tool, RunContext` to the top of this file
-    # @function_tool
-    # async def lookup_weather(self, context: RunContext, location: str):
-    #     """Use this tool to look up current weather information in the given location.
-    #
-    #     If the location is not supported by the weather service, the tool will indicate this. You must tell the user the location's weather is unavailable.
-    #
-    #     Args:
-    #         location: The location to look up weather information for (e.g. city name)
-    #     """
-    #
-    #     logger.info(f"Looking up weather for {location}")
-    #
-    #     return "sunny with a temperature of 70 degrees."
+    @function_tool
+    async def verify_insurance(
+        self,
+        context: RunContext[VerificationSession],
+        patient_name: str,
+        date_of_birth: str,
+        insurance_provider: str,
+        member_id: str,
+        group_number: str,
+    ) -> str:
+        """Verify a patient's insurance coverage by contacting the insurance carrier.
+
+        Use this tool when the user has provided all the required patient
+        information and you are ready to verify their insurance coverage.
+
+        Args:
+            patient_name: Full name of the patient
+            date_of_birth: Patient's date of birth (MM/DD/YYYY)
+            insurance_provider: Name of the insurance company
+            member_id: Patient's insurance member ID
+            group_number: Patient's insurance group number
+        """
+        session_data = context.userdata
+        session_data.patient = PatientInfo(
+            patient_name=patient_name,
+            date_of_birth=date_of_birth,
+            insurance_provider=insurance_provider,
+            member_id=member_id,
+            group_number=group_number,
+        )
+        session_data.result.status = VerificationStatus.IN_PROGRESS
+
+        logger.info(
+            "Verifying insurance for patient %s with %s (member: %s)",
+            patient_name,
+            insurance_provider,
+            member_id,
+        )
+
+        # Update participant attributes so the frontend can show progress
+        await _publish_verification_update(context.session, session_data)
+
+        # In production, this would make an actual API call to the insurance
+        # carrier. For now, we return a simulated successful verification.
+        session_data.result = VerificationResult(
+            status=VerificationStatus.VERIFIED,
+            eligible=True,
+            copay="$30",
+            deductible="$500",
+            deductible_met="$350 of $500",
+            coinsurance="80/20",
+            out_of_pocket_max="$3,000",
+            coverage_details="In-network coverage active",
+            effective_date="01/01/2025",
+            termination_date="12/31/2025",
+            notes="Pre-authorization required for specialist visits",
+        )
+
+        await _publish_verification_update(context.session, session_data)
+
+        return (
+            f"Insurance verification complete for {patient_name}. "
+            f"Status: Eligible. "
+            f"Copay: $30. "
+            f"Deductible: $500 ($350 met so far). "
+            f"Coinsurance: 80/20 in-network. "
+            f"Out-of-pocket max: $3,000. "
+            f"Note: Pre-authorization required for specialist visits."
+        )
+
+
+async def _publish_verification_update(
+    session: AgentSession,
+    data: VerificationSession,
+) -> None:
+    """Publish verification status and results as participant attributes.
+
+    The frontend can listen for attribute changes to update the UI in real time.
+    """
+    room = session.room
+    if room is None or room.local_participant is None:
+        return
+
+    attributes = {
+        "verification.status": data.result.status.value,
+        "verification.patient_name": data.patient.patient_name,
+        "verification.date_of_birth": data.patient.date_of_birth,
+        "verification.insurance_provider": data.patient.insurance_provider,
+        "verification.member_id": data.patient.member_id,
+        "verification.group_number": data.patient.group_number,
+        "verification.eligible": str(data.result.eligible).lower(),
+        "verification.copay": data.result.copay,
+        "verification.deductible": data.result.deductible,
+        "verification.deductible_met": data.result.deductible_met,
+        "verification.coinsurance": data.result.coinsurance,
+        "verification.out_of_pocket_max": data.result.out_of_pocket_max,
+        "verification.coverage_details": data.result.coverage_details,
+        "verification.effective_date": data.result.effective_date,
+        "verification.termination_date": data.result.termination_date,
+        "verification.notes": data.result.notes,
+    }
+
+    await room.local_participant.set_attributes(attributes)
+    logger.info("Published verification update: status=%s", data.result.status.value)
+
+
+def _read_patient_from_attributes(
+    participant: rtc.RemoteParticipant,
+) -> PatientInfo | None:
+    """Read patient information from the frontend participant's attributes.
+
+    The frontend sets these attributes before connecting to the room so the
+    agent can pick them up automatically.
+    """
+    attrs = participant.attributes
+    if not attrs or not attrs.get("patient.name"):
+        return None
+
+    return PatientInfo(
+        patient_name=attrs.get("patient.name", ""),
+        date_of_birth=attrs.get("patient.date_of_birth", ""),
+        member_id=attrs.get("patient.member_id", ""),
+        insurance_provider=attrs.get("patient.insurance_provider", ""),
+        group_number=attrs.get("patient.group_number", ""),
+    )
 
 
 server = AgentServer()
@@ -59,67 +229,60 @@ server.setup_fnc = prewarm
 
 @server.rtc_session()
 async def my_agent(ctx: JobContext):
-    # Logging setup
-    # Add any other context you want in all log entries here
     ctx.log_context_fields = {
         "room": ctx.room.name,
     }
 
-    # Set up a voice AI pipeline using OpenAI, Cartesia, AssemblyAI, and the LiveKit turn detector
     session = AgentSession(
-        # Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand
-        # See all available models at https://docs.livekit.io/agents/models/stt/
         stt=inference.STT(model="assemblyai/universal-streaming", language="en"),
-        # A Large Language Model (LLM) is your agent's brain, processing user input and generating a response
-        # See all available models at https://docs.livekit.io/agents/models/llm/
         llm=inference.LLM(model="openai/gpt-4.1-mini"),
-        # Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear
-        # See all available models as well as voice selections at https://docs.livekit.io/agents/models/tts/
         tts=inference.TTS(
             model="cartesia/sonic-3", voice="9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
         ),
-        # VAD and turn detection are used to determine when the user is speaking and when the agent should respond
-        # See more at https://docs.livekit.io/agents/build/turns
         turn_detection=MultilingualModel(),
         vad=ctx.proc.userdata["vad"],
-        # allow the LLM to generate a response while waiting for the end of turn
-        # See more at https://docs.livekit.io/agents/build/audio/#preemptive-generation
         preemptive_generation=True,
     )
 
-    # To use a realtime model instead of a voice pipeline, use the following session setup instead.
-    # (Note: This is for the OpenAI Realtime API. For other providers, see https://docs.livekit.io/agents/models/realtime/))
-    # 1. Install livekit-agents[openai]
-    # 2. Set OPENAI_API_KEY in .env.local
-    # 3. Add `from livekit.plugins import openai` to the top of this file
-    # 4. Use the following session setup instead of the version above
-    # session = AgentSession(
-    #     llm=openai.realtime.RealtimeModel(voice="marin")
-    # )
+    agent = InsuranceVerificationAgent()
 
-    # # Add a virtual avatar to the session, if desired
-    # # For other providers, see https://docs.livekit.io/agents/models/avatar/
-    # avatar = hedra.AvatarSession(
-    #   avatar_id="...",  # See https://docs.livekit.io/agents/models/avatar/plugins/hedra
-    # )
-    # # Start the avatar and wait for it to join
-    # await avatar.start(session, room=ctx.room)
-
-    # Start the session, which initializes the voice pipeline and warms up the models
     await session.start(
-        agent=Assistant(),
+        agent=agent,
         room=ctx.room,
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(
-                noise_cancellation=lambda params: noise_cancellation.BVCTelephony()
-                if params.participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
-                else noise_cancellation.BVC(),
+                noise_cancellation=lambda params: (
+                    noise_cancellation.BVCTelephony()
+                    if params.participant.kind
+                    == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
+                    else noise_cancellation.BVC()
+                ),
             ),
         ),
     )
 
-    # Join the room and connect to the user
     await ctx.connect()
+
+    # Check if the frontend participant has already provided patient info
+    # via participant attributes — if so, inject it into the conversation
+    for participant in ctx.room.remote_participants.values():
+        patient = _read_patient_from_attributes(participant)
+        if patient:
+            session_data = session.userdata
+            session_data.patient = patient
+            patient_summary = (
+                f"Patient information has been provided: "
+                f"Name: {patient.patient_name}, "
+                f"DOB: {patient.date_of_birth}, "
+                f"Insurance: {patient.insurance_provider}, "
+                f"Member ID: {patient.member_id}, "
+                f"Group: {patient.group_number}. "
+                f"Please confirm the details and proceed with verification."
+            )
+            await session.generate_reply(
+                instructions=patient_summary,
+            )
+            break
 
 
 if __name__ == "__main__":
