@@ -95,6 +95,28 @@ In production, use the `start` command:
 uv run python src/agent.py start
 ```
 
+## Insurance Verification Dashboard
+
+This project includes a lightweight "Fire and Forget" dashboard for clinic front-desk staff to dispatch voice AI calls for insurance verification. The dashboard uses **HTMX + Alpine.js** for the frontend and **FastAPI** for the backend.
+
+### Running the dashboard
+
+To start the dashboard server:
+
+```console
+uvicorn src.dashboard:app --reload
+```
+
+Then open [http://localhost:8000](http://localhost:8000) in your browser.
+
+The dashboard provides a simple interface where staff can:
+1. Enter a verification request (free-text prompt)
+2. Submit the request and watch live status updates
+3. Review the verification results when completed
+4. Mark jobs as done to return to the input form
+
+**Note:** The dashboard currently simulates the verification lifecycle. Integration with Retell AI will be added in a future update.
+
 ## Frontend & Telephony
 
 Get started quickly with our pre-built frontend starter apps, or add telephony support:

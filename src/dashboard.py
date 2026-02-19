@@ -46,7 +46,7 @@ templates = Jinja2Templates(directory=str(template_dir))
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Serve the main dashboard HTML page."""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html")
 
 
 @app.post("/api/verify", response_class=HTMLResponse)
