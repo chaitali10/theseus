@@ -4,7 +4,6 @@ import uuid
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict
 
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse
@@ -34,7 +33,7 @@ class VerificationJob:
 
 
 # In-memory job storage
-jobs: Dict[str, VerificationJob] = {}
+jobs: dict[str, VerificationJob] = {}
 
 app = FastAPI(title="Insurance Verification Dashboard")
 
@@ -58,8 +57,8 @@ async def start_verification(prompt: str = Form(...)):
 
     logger.info(f"Created job {job_id} with prompt: {prompt[:50]}...")
 
-    # Start background simulation
-    asyncio.create_task(simulate_verification_lifecycle(job_id))
+    # Start background simulation (fire and forget)
+    _ = asyncio.create_task(simulate_verification_lifecycle(job_id))  # noqa: RUF006
 
     # Return initial status card
     return get_status_html(job_id)
@@ -85,17 +84,17 @@ async def mark_done(job_id: str):
         <form hx-post="/api/verify" hx-target="#main-content" hx-swap="innerHTML" x-data="{ prompt: '' }">
             <div class="input-section">
                 <label for="prompt">Verification Request</label>
-                <textarea 
-                    id="prompt" 
-                    name="prompt" 
+                <textarea
+                    id="prompt"
+                    name="prompt"
                     x-model="prompt"
                     placeholder="Call Metlife customer service to validate the following patient's insurance. Patient Name: 'John Doe', Patient Insurance Number: '123'"
                     required
                 ></textarea>
             </div>
             <div class="button-group">
-                <button 
-                    type="button" 
+                <button
+                    type="button"
                     class="btn-secondary"
                     @click="prompt = 'Call [insurance company] to verify coverage for [patient name], DOB [date], member ID [number]'"
                 >
@@ -168,36 +167,36 @@ def get_status_html(job_id: str) -> str:
                     <div class="status-message">Verification finished successfully</div>
                 </div>
             </div>
-            
+
             <div class="result-section">
-                <div class="result-outcome">{job.result['key_outcome']}</div>
-                
+                <div class="result-outcome">{job.result["key_outcome"]}</div>
+
                 <div class="result-label">Details</div>
                 <dl>
                     <dt>Copay</dt>
-                    <dd>{job.result['details']['copay']}</dd>
-                    
+                    <dd>{job.result["details"]["copay"]}</dd>
+
                     <dt>Deductible</dt>
-                    <dd>{job.result['details']['deductible']}</dd>
-                    
+                    <dd>{job.result["details"]["deductible"]}</dd>
+
                     <dt>Coinsurance</dt>
-                    <dd>{job.result['details']['coinsurance']}</dd>
-                    
+                    <dd>{job.result["details"]["coinsurance"]}</dd>
+
                     <dt>Out-of-Pocket Max</dt>
-                    <dd>{job.result['details']['out_of_pocket_max']}</dd>
+                    <dd>{job.result["details"]["out_of_pocket_max"]}</dd>
                 </dl>
-                
+
                 <div style="margin-top: 16px;">
                     <div class="result-label">Follow-up Needed</div>
-                    <div class="result-value">{job.result['follow_up']}</div>
+                    <div class="result-value">{job.result["follow_up"]}</div>
                 </div>
             </div>
-            
+
             <div style="margin-top: 20px;">
-                <button 
-                    class="btn-done" 
-                    hx-post="/api/done/{job_id}" 
-                    hx-target="#main-content" 
+                <button
+                    class="btn-done"
+                    hx-post="/api/done/{job_id}"
+                    hx-target="#main-content"
                     hx-swap="innerHTML"
                     style="width: 100%;"
                 >
@@ -214,25 +213,25 @@ def get_status_html(job_id: str) -> str:
                 <div class="status-indicator status-failed"></div>
                 <div class="status-content">
                     <div class="status-title">Failed</div>
-                    <div class="status-message">{job.error or 'Call could not be completed'}</div>
+                    <div class="status-message">{job.error or "Call could not be completed"}</div>
                 </div>
             </div>
-            
+
             <div style="margin-top: 20px; display: flex; gap: 12px;">
-                <button 
-                    class="btn-retry" 
-                    hx-post="/api/verify" 
+                <button
+                    class="btn-retry"
+                    hx-post="/api/verify"
                     hx-vals='{{"prompt": "{job.prompt}"}}'
-                    hx-target="#main-content" 
+                    hx-target="#main-content"
                     hx-swap="innerHTML"
                     style="flex: 1;"
                 >
                     🔄 Retry
                 </button>
-                <button 
-                    class="btn-secondary" 
-                    hx-post="/api/done/{job_id}" 
-                    hx-target="#main-content" 
+                <button
+                    class="btn-secondary"
+                    hx-post="/api/done/{job_id}"
+                    hx-target="#main-content"
                     hx-swap="innerHTML"
                     style="flex: 1;"
                 >

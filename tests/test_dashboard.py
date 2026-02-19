@@ -23,8 +23,9 @@ def test_index_page(client):
     response = client.get("/")
     assert response.status_code == 200
     assert "Insurance Verification Dashboard" in response.text
-    assert "htmx.org" in response.text
-    assert "alpinejs" in response.text
+    # Check that CDN scripts are included in the HTML
+    assert "htmx.org" in response.text  # HTMX CDN script tag
+    assert "alpinejs" in response.text  # Alpine.js CDN script tag
 
 
 def test_start_verification(client):
@@ -37,7 +38,7 @@ def test_start_verification(client):
 
     # Check that a job was created
     assert len(jobs) == 1
-    job = list(jobs.values())[0]
+    job = next(iter(jobs.values()))
     assert job.status == JobStatus.DIALING
     assert job.prompt == "Call Metlife for John Doe"
 
@@ -48,13 +49,13 @@ def test_get_status_dialing(client):
     response = client.post("/api/verify", data={"prompt": "Test"})
     assert response.status_code == 200
 
-    job_id = list(jobs.keys())[0]
+    job_id = next(iter(jobs.keys()))
 
     # Get status immediately (should be dialing)
     response = client.get(f"/api/status/{job_id}")
     assert response.status_code == 200
     assert "Dialing..." in response.text
-    assert "hx-trigger=\"every 3s\"" in response.text
+    assert 'hx-trigger="every 3s"' in response.text
 
 
 def test_get_status_nonexistent_job(client):
@@ -68,7 +69,7 @@ def test_get_status_states(client):
     """Test getting status for different job states."""
     # Start a job
     response = client.post("/api/verify", data={"prompt": "Test"})
-    job_id = list(jobs.keys())[0]
+    job_id = next(iter(jobs.keys()))
     job = jobs[job_id]
 
     # Test dialing state
@@ -106,13 +107,13 @@ def test_get_status_states(client):
     assert "$30" in response.text
     assert "Pre-authorization" in response.text
     # Should not have polling trigger when completed
-    assert "hx-trigger=\"every 3s\"" not in response.text
+    assert 'hx-trigger="every 3s"' not in response.text
 
 
 def test_get_status_failed(client):
     """Test getting status for a failed job."""
     response = client.post("/api/verify", data={"prompt": "Test"})
-    job_id = list(jobs.keys())[0]
+    job_id = next(iter(jobs.keys()))
     job = jobs[job_id]
 
     # Manually set to failed
@@ -130,7 +131,7 @@ def test_mark_job_done(client):
     """Test marking a job as done."""
     # Start a job
     response = client.post("/api/verify", data={"prompt": "Test"})
-    job_id = list(jobs.keys())[0]
+    job_id = next(iter(jobs.keys()))
 
     # Mark it as done
     response = client.post(f"/api/done/{job_id}")
@@ -168,8 +169,8 @@ def test_multiple_concurrent_jobs(client):
 
 def test_result_data_structure(client):
     """Test that the completed job has the correct result structure."""
-    response = client.post("/api/verify", data={"prompt": "Test"})
-    job_id = list(jobs.keys())[0]
+    client.post("/api/verify", data={"prompt": "Test"})
+    job_id = next(iter(jobs.keys()))
     job = jobs[job_id]
 
     # Manually complete the job
@@ -195,4 +196,3 @@ def test_result_data_structure(client):
     assert "deductible" in details
     assert "coinsurance" in details
     assert "out_of_pocket_max" in details
-
